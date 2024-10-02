@@ -50,6 +50,7 @@ add_library(rapidjson STATIC IMPORTED ${RAPIDJSON})
 
 # add subdirs
 
+
 add_subdirectory(src)
 if (BUILD_EXAMPLES)
     add_subdirectory(examples/send-presence)

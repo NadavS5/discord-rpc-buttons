@@ -10,6 +10,14 @@ set_target_properties(send-presence PROPERTIES
 )
 target_link_libraries(send-presence discord-rpc)
 
+
+set_target_properties(send-presence PROPERTIES WIN32_EXECUTABLE TRUE)
+
+if (WIN32)
+    target_link_options(send-presence PRIVATE "/ENTRY:mainCRTStartup")
+endif()
+
+
 install(
     TARGETS send-presence
     RUNTIME

@@ -89,15 +89,15 @@ size_t JsonWriteRichPresenceObj(char* dest,
     JsonWriter writer(dest, maxLen);
 
     {
-        char* ButtonsJson = "{button1: {\"true\",label: \" www.youtube.com\",url: \" www.youtube.com\"}}";
+        char* ButtonsJson = " {label : data.buttons.button1.label , url : data.buttons.button1.url},{label : data.buttons.button2.label , url : data.buttons.button2.url}]";
         WriteObject top(writer);
 
-        
+        JsonWriteNonce(writer, nonce);
 
         WriteKey(writer, "cmd");
         writer.String("SET_ACTIVITY");
 
-            {
+        {
             WriteObject args(writer, "args");
 
             WriteKey(writer, "pid");
@@ -106,16 +106,14 @@ size_t JsonWriteRichPresenceObj(char* dest,
             if (presence != nullptr) {
                 WriteObject activity(writer, "activity");
 
-                
-                //WriteOptionalString(writer, "buttons_enabled", "true");
                 WriteOptionalString(writer, "state", presence->state);
                 WriteOptionalString(writer, "details", presence->details);
 
-              
+                printf("%s", presence->details);
 
-                
+                //WriteOptionalString(writer, "buttons", ButtonsJson);
 
-               if (presence->startTimestamp || presence->endTimestamp) {
+                if (presence->startTimestamp || presence->endTimestamp) {
                     WriteObject timestamps(writer, "timestamps");
 
                     if (presence->startTimestamp) {
@@ -139,36 +137,7 @@ size_t JsonWriteRichPresenceObj(char* dest,
                     WriteOptionalString(writer, "small_image", presence->smallImageKey);
                     WriteOptionalString(writer, "small_text", presence->smallImageText);
                 }
-                {
-                    WriteArray buttons(writer,"buttons");
-                    if (presence->button1label && presence->button1url) {
-                        WriteObject button1(writer);
-                        
-                        //WriteKey(writer,"enabled");
-                        //writer.Key("true");
 
-                        WriteKey(writer,"label");
-                        writer.Key(presence->button1label);
-
-                        WriteKey(writer,"url");
-                        writer.Key(presence->button1url);
-                        
-                    }
-                    if(presence->button2label && presence->button2url){
-                        WriteObject button1(writer);
-                        
-                       // WriteKey(writer,"enabled");
-                       // writer.Key("true");
-
-                        WriteKey(writer,"label");
-                        writer.Key(presence->button2label);
-
-                        WriteKey(writer,"url");
-                        writer.Key(presence->button2url);
-                        
-                    }
-                }
-                /*
                 if ((presence->partyId && presence->partyId[0]) || presence->partySize ||
                     presence->partyMax || presence->partyPrivacy) {
                     WriteObject party(writer, "party");
@@ -184,8 +153,7 @@ size_t JsonWriteRichPresenceObj(char* dest,
                         writer.Int(presence->partyPrivacy);
                     }
                 }
-                */
-                /*
+
                 if ((presence->matchSecret && presence->matchSecret[0]) ||
                     (presence->joinSecret && presence->joinSecret[0]) ||
                     (presence->spectateSecret && presence->spectateSecret[0])) {
@@ -193,14 +161,12 @@ size_t JsonWriteRichPresenceObj(char* dest,
                     WriteOptionalString(writer, "match", presence->matchSecret);
                     WriteOptionalString(writer, "join", presence->joinSecret);
                     WriteOptionalString(writer, "spectate", presence->spectateSecret);
-                }*/
+                }
 
-                //writer.Key("instance");
-                //writer.Bool(presence->instance != 0);
+                writer.Key("instance");
+                writer.Bool(presence->instance != 0);
             }
-            
         }
-        JsonWriteNonce(writer, nonce);
     }
 
     return writer.Size();

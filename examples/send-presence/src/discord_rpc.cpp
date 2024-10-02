@@ -372,7 +372,6 @@ extern "C" DISCORD_EXPORT void Discord_UpdatePresence(const DiscordRichPresence*
         std::lock_guard<std::mutex> guard(PresenceMutex);
         QueuedPresence.length = JsonWriteRichPresenceObj(
           QueuedPresence.buffer, sizeof(QueuedPresence.buffer), Nonce++, Pid, presence);
-        printf("%s", QueuedPresence.buffer);
         UpdatePresence.exchange(true);
     }
     SignalIOActivity();

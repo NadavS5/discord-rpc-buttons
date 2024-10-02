@@ -1,21 +1,20 @@
-﻿/*
+/*
     This is a simple example in C of using the rich presence API asynchronously.
 */
 
 #define _CRT_SECURE_NO_WARNINGS /* thanks Microsoft */
-#include<windows.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 #include "discord_rpc.h"
-static int OpenTabs = 53;
+static int OpenTabs = 1;
 static const char* APPLICATION_ID = "1290696775337906227";
 static int FrustrationLevel = 0;
 static int64_t StartTime;
 static int SendPresence = 1;
-static time_t StartTime ;
 
 static int prompt(char* line, size_t size)
 {
@@ -35,23 +34,18 @@ static int prompt(char* line, size_t size)
 static void updateDiscordPresence()
 {
     if (SendPresence) {
-        char buffer[1024];
+        char buffer[256];
         
     DiscordRichPresence discordPresence;
     memset(&discordPresence, 0, sizeof(discordPresence));
     discordPresence.details = "Coding";
 
-    discordPresence.button1label = "My Projects";
-    discordPresence.button1url = "https://github.com/nadavs5";
-    
-    discordPresence.button2label = "My Search Engine";
-    discordPresence.button2url = "https://google.com";
 
-    sprintf(buffer, "Open Tabs: %d ", OpenTabs);
+    sprintf(buffer, "Open Tabs: %d", OpenTabs);
     discordPresence.state = buffer;
-    
-    discordPresence.startTimestamp = StartTime;
-    discordPresence.endTimestamp = time(NULL);//discordPresence.startTimestamp + 17 * 60 + 17;
+
+    discordPresence.startTimestamp = 1507665886;
+    discordPresence.endTimestamp = discordPresence.startTimestamp + 17 * 60 + 17;
     
     discordPresence.largeImageKey = "cpp_logo";
     //discordPresence.smallImageKey = "th";
@@ -62,8 +56,8 @@ static void updateDiscordPresence()
     discordPresence.partyMax = 0;
     discordPresence.joinSecret = "MTI4NzM0OjFpMmhuZToxMjMxMjM= ";
     Discord_UpdatePresence(&discordPresence);
-        printf("sent\n");
-       // Discord_UpdatePresence(&discordPresence);
+        printf("sent");
+        Discord_UpdatePresence(&discordPresence);
     }
     else {
         Discord_ClearPresence();
@@ -208,14 +202,11 @@ static void gameLoop()
 
 int main(int argc, char* argv[])
 {
-    StartTime = time(NULL);
     discordInit();
     updateDiscordPresence();
     //gameLoop();
     while (1==1) {
-         updateDiscordPresence();
-        // OpenTabs++;
-         Sleep(1000);
+         
     }
    
     Discord_Shutdown();
