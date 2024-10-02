@@ -3,5 +3,8 @@
 /thirdparty/
 .vs/
 .DS_Store
-examples/send-presence/src/out
-out/
+/examples/send-presence/src/out
+/out/
+/examples/send-presence/include/
+/examples/send-presence/src/
+/examples/send-presence/out/
