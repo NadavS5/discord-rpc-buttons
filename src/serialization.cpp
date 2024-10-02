@@ -1,215 +1,289 @@
-#pragma once
+#include "serialization.h"
+#include "connection.h"
+#include "discord_rpc.h"
 
-#include <stdint.h>
-
-#ifndef __MINGW32__
-#pragma warning(push)
-
-#pragma warning(disable : 4061) // enum is not explicitly handled by a case label
-#pragma warning(disable : 4365) // signed/unsigned mismatch
-#pragma warning(disable : 4464) // relative include path contains
-#pragma warning(disable : 4668) // is not defined as a preprocessor macro
-#pragma warning(disable : 6313) // Incorrect operator
-#endif                          // __MINGW32__
-
-#include "rapidjson/document.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
-
-#ifndef __MINGW32__
-#pragma warning(pop)
-#endif // __MINGW32__
-
-// if only there was a standard library function for this
-template <size_t Len>
-inline size_t StringCopy(char (&dest)[Len], const char* src)
+template <typename T>
+void NumberToString(char* dest, T number)
 {
-    if (!src || !Len) {
-        return 0;
+    if (!number) {
+        *dest++ = '0';
+        *dest++ = 0;
+        return;
     }
-    size_t copied;
-    char* out = dest;
-    for (copied = 1; *src && copied < Len; ++copied) {
-        *out++ = *src++;
+    if (number < 0) {
+        *dest++ = '-';
+        number = -number;
     }
-    *out = 0;
-    return copied - 1;
+    char temp[32];
+    int place = 0;
+    while (number) {
+        auto digit = number % 10;
+        number = number / 10;
+        temp[place++] = '0' + (char)digit;
+    }
+    for (--place; place >= 0; --place) {
+        *dest++ = temp[place];
+    }
+    *dest = 0;
 }
 
-size_t JsonWriteHandshakeObj(char* dest, size_t maxLen, int version, const char* applicationId);
+// it's ever so slightly faster to not have to strlen the key
+template <typename T>
+void WriteKey(JsonWriter& w, T& k)
+{
+    w.Key(k, sizeof(T) - 1);
+}
 
-// Commands
-struct DiscordRichPresence;
+struct WriteObject {
+    JsonWriter& writer;
+    WriteObject(JsonWriter& w)
+        : writer(w)
+    {
+        writer.StartObject();
+    }
+    template <typename T>
+    WriteObject(JsonWriter& w, T& name)
+        : writer(w)
+    {
+        WriteKey(writer, name);
+        writer.StartObject();
+    }
+    ~WriteObject() { writer.EndObject(); }
+};
+
+struct WriteArray {
+    JsonWriter& writer;
+    template <typename T>
+    WriteArray(JsonWriter& w, T& name)
+        : writer(w)
+    {
+        WriteKey(writer, name);
+        writer.StartArray();
+    }
+    ~WriteArray() { writer.EndArray(); }
+};
+
+template <typename T>
+void WriteOptionalString(JsonWriter& w, T& k, const char* value)
+{
+    if (value && value[0]) {
+        w.Key(k, sizeof(T) - 1);
+        w.String(value);
+    }
+}
+
+static void JsonWriteNonce(JsonWriter& writer, int nonce)
+{
+    WriteKey(writer, "nonce");
+    char nonceBuffer[32];
+    NumberToString(nonceBuffer, nonce);
+    writer.String(nonceBuffer);
+}
+
 size_t JsonWriteRichPresenceObj(char* dest,
-                                size_t maxLen,
-                                int nonce,
-                                int pid,
-                                const DiscordRichPresence* presence);
-size_t JsonWriteSubscribeCommand(char* dest, size_t maxLen, int nonce, const char* evtName);
-
-size_t JsonWriteUnsubscribeCommand(char* dest, size_t maxLen, int nonce, const char* evtName);
-
-size_t JsonWriteJoinReply(char* dest, size_t maxLen, const char* userId, int reply, int nonce);
-
-// I want to use as few allocations as I can get away with, and to do that with RapidJson, you need
-// to supply some of your own allocators for stuff rather than use the defaults
-
-class LinearAllocator {
-public:
-    char* buffer_;
-    char* end_;
-    LinearAllocator()
-    {
-        assert(0); // needed for some default case in rapidjson, should not use
-    }
-    LinearAllocator(char* buffer, size_t size)
-      : buffer_(buffer)
-      , end_(buffer + size)
-    {
-    }
-    static const bool kNeedFree = false;
-    void* Malloc(size_t size)
-    {
-        char* res = buffer_;
-        buffer_ += size;
-        if (buffer_ > end_) {
-            buffer_ = res;
-            return nullptr;
-        }
-        return res;
-    }
-    void* Realloc(void* originalPtr, size_t originalSize, size_t newSize)
-    {
-        if (newSize == 0) {
-            return nullptr;
-        }
-        // allocate how much you need in the first place
-        assert(!originalPtr && !originalSize);
-        // unused parameter warning
-        (void)(originalPtr);
-        (void)(originalSize);
-        return Malloc(newSize);
-    }
-    static void Free(void* ptr)
-    {
-        /* shrug */
-        (void)ptr;
-    }
-};
-
-template <size_t Size>
-class FixedLinearAllocator : public LinearAllocator {
-public:
-    char fixedBuffer_[Size];
-    FixedLinearAllocator()
-      : LinearAllocator(fixedBuffer_, Size)
-    {
-    }
-    static const bool kNeedFree = false;
-};
-
-// wonder why this isn't a thing already, maybe I missed it
-class DirectStringBuffer {
-public:
-    using Ch = char;
-    char* buffer_;
-    char* end_;
-    char* current_;
-
-    DirectStringBuffer(char* buffer, size_t maxLen)
-      : buffer_(buffer)
-      , end_(buffer + maxLen)
-      , current_(buffer)
-    {
-    }
-
-    void Put(char c)
-    {
-        if (current_ < end_) {
-            *current_++ = c;
-        }
-    }
-    void Flush() {}
-    size_t GetSize() const { return (size_t)(current_ - buffer_); }
-};
-
-using MallocAllocator = rapidjson::CrtAllocator;
-using PoolAllocator = rapidjson::MemoryPoolAllocator<MallocAllocator>;
-using UTF8 = rapidjson::UTF8<char>;
-// Writer appears to need about 16 bytes per nested object level (with 64bit size_t)
-using StackAllocator = FixedLinearAllocator<2048>;
-constexpr size_t WriterNestingLevels = 2048 / (2 * sizeof(size_t));
-using JsonWriterBase =
-  rapidjson::Writer<DirectStringBuffer, UTF8, UTF8, StackAllocator, rapidjson::kWriteNoFlags>;
-class JsonWriter : public JsonWriterBase {
-public:
-    DirectStringBuffer stringBuffer_;
-    StackAllocator stackAlloc_;
-
-    JsonWriter(char* dest, size_t maxLen)
-      : JsonWriterBase(stringBuffer_, &stackAlloc_, WriterNestingLevels)
-      , stringBuffer_(dest, maxLen)
-      , stackAlloc_()
-    {
-    }
-
-    size_t Size() const { return stringBuffer_.GetSize(); }
-};
-
-using JsonDocumentBase = rapidjson::GenericDocument<UTF8, PoolAllocator, StackAllocator>;
-class JsonDocument : public JsonDocumentBase {
-public:
-    static const int kDefaultChunkCapacity = 32 * 1024;
-    // json parser will use this buffer first, then allocate more if needed; I seriously doubt we
-    // send any messages that would use all of this, though.
-    char parseBuffer_[32 * 1024];
-    MallocAllocator mallocAllocator_;
-    PoolAllocator poolAllocator_;
-    StackAllocator stackAllocator_;
-    JsonDocument()
-      : JsonDocumentBase(rapidjson::kObjectType,
-                         &poolAllocator_,
-                         sizeof(stackAllocator_.fixedBuffer_),
-                         &stackAllocator_)
-      , poolAllocator_(parseBuffer_, sizeof(parseBuffer_), kDefaultChunkCapacity, &mallocAllocator_)
-      , stackAllocator_()
-    {
-    }
-};
-
-using JsonValue = rapidjson::GenericValue<UTF8, PoolAllocator>;
-
-inline JsonValue* GetObjMember(JsonValue* obj, const char* name)
+    size_t maxLen,
+    int nonce,
+    int pid,
+    const DiscordRichPresence* presence)
 {
-    if (obj) {
-        auto member = obj->FindMember(name);
-        if (member != obj->MemberEnd() && member->value.IsObject()) {
-            return &member->value;
+    JsonWriter writer(dest, maxLen);
+
+    {
+        char* ButtonsJson = "{button1: {\"true\",label: \" www.youtube.com\",url: \" www.youtube.com\"}}";
+        WriteObject top(writer);
+
+
+
+        WriteKey(writer, "cmd");
+        writer.String("SET_ACTIVITY");
+
+        {
+            WriteObject args(writer, "args");
+
+            WriteKey(writer, "pid");
+            writer.Int(pid);
+
+            if (presence != nullptr) {
+                WriteObject activity(writer, "activity");
+
+
+                //WriteOptionalString(writer, "buttons_enabled", "true");
+                WriteOptionalString(writer, "state", presence->state);
+                WriteOptionalString(writer, "details", presence->details);
+
+
+
+
+
+                if (presence->startTimestamp || presence->endTimestamp) {
+                    WriteObject timestamps(writer, "timestamps");
+
+                    if (presence->startTimestamp) {
+                        WriteKey(writer, "start");
+                        writer.Int64(presence->startTimestamp);
+                    }
+
+                    if (presence->endTimestamp) {
+                        WriteKey(writer, "end");
+                        writer.Int64(presence->endTimestamp);
+                    }
+                }
+
+                if ((presence->largeImageKey && presence->largeImageKey[0]) ||
+                    (presence->largeImageText && presence->largeImageText[0]) ||
+                    (presence->smallImageKey && presence->smallImageKey[0]) ||
+                    (presence->smallImageText && presence->smallImageText[0])) {
+                    WriteObject assets(writer, "assets");
+                    WriteOptionalString(writer, "large_image", presence->largeImageKey);
+                    WriteOptionalString(writer, "large_text", presence->largeImageText);
+                    WriteOptionalString(writer, "small_image", presence->smallImageKey);
+                    WriteOptionalString(writer, "small_text", presence->smallImageText);
+                }
+                {
+                    WriteArray buttons(writer, "buttons");
+                    if (presence->button1label && presence->button1url) {
+                        WriteObject button1(writer);
+
+                        //WriteKey(writer,"enabled");
+                        //writer.Key("true");
+
+                        WriteKey(writer, "label");
+                        writer.Key(presence->button1label);
+
+                        WriteKey(writer, "url");
+                        writer.Key(presence->button1url);
+
+                    }
+                    if (presence->button2label && presence->button2url) {
+                        WriteObject button1(writer);
+
+                        // WriteKey(writer,"enabled");
+                        // writer.Key("true");
+
+                        WriteKey(writer, "label");
+                        writer.Key(presence->button2label);
+
+                        WriteKey(writer, "url");
+                        writer.Key(presence->button2url);
+
+                    }
+                }
+                /*
+                if ((presence->partyId && presence->partyId[0]) || presence->partySize ||
+                    presence->partyMax || presence->partyPrivacy) {
+                    WriteObject party(writer, "party");
+                    WriteOptionalString(writer, "id", presence->partyId);
+                    if (presence->partySize && presence->partyMax) {
+                        WriteArray size(writer, "size");
+                        writer.Int(presence->partySize);
+                        writer.Int(presence->partyMax);
+                    }
+
+                    if (presence->partyPrivacy) {
+                        WriteKey(writer, "privacy");
+                        writer.Int(presence->partyPrivacy);
+                    }
+                }
+                */
+                /*
+                if ((presence->matchSecret && presence->matchSecret[0]) ||
+                    (presence->joinSecret && presence->joinSecret[0]) ||
+                    (presence->spectateSecret && presence->spectateSecret[0])) {
+                    WriteObject secrets(writer, "secrets");
+                    WriteOptionalString(writer, "match", presence->matchSecret);
+                    WriteOptionalString(writer, "join", presence->joinSecret);
+                    WriteOptionalString(writer, "spectate", presence->spectateSecret);
+                }*/
+
+                //writer.Key("instance");
+                //writer.Bool(presence->instance != 0);
+            }
+
         }
+        JsonWriteNonce(writer, nonce);
     }
-    return nullptr;
+
+    return writer.Size();
 }
 
-inline int GetIntMember(JsonValue* obj, const char* name, int notFoundDefault = 0)
+size_t JsonWriteHandshakeObj(char* dest, size_t maxLen, int version, const char* applicationId)
 {
-    if (obj) {
-        auto member = obj->FindMember(name);
-        if (member != obj->MemberEnd() && member->value.IsInt()) {
-            return member->value.GetInt();
-        }
+    JsonWriter writer(dest, maxLen);
+
+    {
+        WriteObject obj(writer);
+        WriteKey(writer, "v");
+        writer.Int(version);
+        WriteKey(writer, "client_id");
+        writer.String(applicationId);
     }
-    return notFoundDefault;
+
+    return writer.Size();
 }
 
-inline const char* GetStrMember(JsonValue* obj,
-                                const char* name,
-                                const char* notFoundDefault = nullptr)
+size_t JsonWriteSubscribeCommand(char* dest, size_t maxLen, int nonce, const char* evtName)
 {
-    if (obj) {
-        auto member = obj->FindMember(name);
-        if (member != obj->MemberEnd() && member->value.IsString()) {
-            return member->value.GetString();
-        }
+    JsonWriter writer(dest, maxLen);
+
+    {
+        WriteObject obj(writer);
+
+        JsonWriteNonce(writer, nonce);
+
+        WriteKey(writer, "cmd");
+        writer.String("SUBSCRIBE");
+
+        WriteKey(writer, "evt");
+        writer.String(evtName);
     }
-    return notFoundDefault;
+
+    return writer.Size();
+}
+
+size_t JsonWriteUnsubscribeCommand(char* dest, size_t maxLen, int nonce, const char* evtName)
+{
+    JsonWriter writer(dest, maxLen);
+
+    {
+        WriteObject obj(writer);
+
+        JsonWriteNonce(writer, nonce);
+
+        WriteKey(writer, "cmd");
+        writer.String("UNSUBSCRIBE");
+
+        WriteKey(writer, "evt");
+        writer.String(evtName);
+    }
+
+    return writer.Size();
+}
+
+size_t JsonWriteJoinReply(char* dest, size_t maxLen, const char* userId, int reply, int nonce)
+{
+    JsonWriter writer(dest, maxLen);
+
+    {
+        WriteObject obj(writer);
+
+        WriteKey(writer, "cmd");
+        if (reply == DISCORD_REPLY_YES) {
+            writer.String("SEND_ACTIVITY_JOIN_INVITE");
+        }
+        else {
+            writer.String("CLOSE_ACTIVITY_JOIN_REQUEST");
+        }
+
+        WriteKey(writer, "args");
+        {
+            WriteObject args(writer);
+
+            WriteKey(writer, "user_id");
+            writer.String(userId);
+        }
+
+        JsonWriteNonce(writer, nonce);
+    }
+
+    return writer.Size();
 }
