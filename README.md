@@ -1,5 +1,15 @@
-# Discord RPC
+# Discord RPC Buttons
+This is a fork of [discord-rpc](https://github.com/discord/discord-rpc)
+with added buttons.
+## how to use
+the DiscordRichPresence struct now has
 
+button1label
+button1url;
+button2label;
+button2url;
+you need to edit both label and url to add the button.
+there is an example in examples/send-presence/send-presence.c
 ## Deprecation Notice
 
 This library has been deprecated in favor of Discord's GameSDK. [Learn more here](https://discordapp.com/developers/docs/game-sdk/sdk-starter-guide)
